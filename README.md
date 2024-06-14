@@ -4,11 +4,10 @@
 - Собрать проект
 - Открыть командную строку от имени администратора
 - Ввести команды
-- 'sc create ChatService binPath= <абсолютный путь до ChatService.exe>'
-- 'sc start ChatService'
-- Для проверки состояния сервиса
-- 'sc qc ChatService'
-- Чтобы остановить сервис надо ввести
-- 'sc stop ChatService'
-- Чтобы удалить сервис надо ввести
-- 'sc delete ChatService'
+```
+sc create ChatService binPath= <абсолютный путь до ChatService.exe>
+sc start ChatService
+```
+- Чтобы проверить статус сервиса нужно ввести `sc qc ChatService`
+- Чтобы остановить сервис нужно ввести `sc stop ChatService`
+- Чтобы удалить сервис нужно ввести `sc delete ChatService`
