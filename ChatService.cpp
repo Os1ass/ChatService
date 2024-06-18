@@ -5,15 +5,19 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
-#define SERVICE_NAME  TEXT("ChatService")
 #define DEFAULT_PORT  "27015"
 #define BUFFER_SIZE   512
 
 ChatService* ChatService::s_service = nullptr;
 
-ChatService::ChatService() :
-    m_serviceStatusHandle(nullptr),
-    m_stopEvent(INVALID_HANDLE_VALUE),
+ChatService* ChatService::GetInstance()
+{
+    if (s_service == nullptr)
+        s_service = new ChatService();
+    return s_service;
+}
+
+ChatService::ChatService() : 
     m_workerThread(nullptr)
 {
     s_service = this;
@@ -21,81 +25,28 @@ ChatService::ChatService() :
 
 ChatService::~ChatService()
 {
-    if (m_stopEvent != INVALID_HANDLE_VALUE)
-        CloseHandle(m_stopEvent);
-    if (m_workerThread)
-        CloseHandle(m_workerThread);
+    CloseHandle(m_workerThread);
     WSACleanup();
-}
-
-BOOL ChatService::Run()
-{
-    SERVICE_TABLE_ENTRY serviceTable[] = {
-        { const_cast<LPWSTR>(SERVICE_NAME), ServiceMainWrapper },
-        { NULL, NULL }
-    };
-
-    return StartServiceCtrlDispatcher(serviceTable);
-}
-
-void ChatService::Stop()
-{
-    if (m_stopEvent != INVALID_HANDLE_VALUE)
-        SetEvent(m_stopEvent);
 }
 
 BOOL ChatService::Init()
 {
-    m_stopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    if (m_stopEvent == NULL)
-        return FALSE;
-
     WSADATA wsaData;
     int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (iResult != 0) {
+    if (iResult != 0) 
+    {
+        OutputDebugString(TEXT("Unable to startup WSA"));
+        return FALSE;
+    }
+
+    m_workerThread = CreateThread(NULL, 0, WorkerThread, this, 0, NULL);
+    if (m_workerThread == NULL)
+    {
+        OutputDebugString(TEXT("Unable to create thread"));
         return FALSE;
     }
 
     return TRUE;
-}
-
-void WINAPI ChatService::ServiceMainWrapper(DWORD dwArgc, LPTSTR* lpszArgv)
-{
-    if (s_service) {
-        s_service->ServiceMain(dwArgc, lpszArgv);
-    }
-}
-
-void ChatService::ServiceMain(DWORD dwArgc, LPTSTR* lpszArgv)
-{
-    m_serviceStatusHandle = RegisterServiceCtrlHandler(SERVICE_NAME, ServiceCtrlHandler);
-    if (!m_serviceStatusHandle) {
-        return;
-    }
-
-    m_serviceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
-    m_serviceStatus.dwCurrentState = SERVICE_START_PENDING;
-    m_serviceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
-    m_serviceStatus.dwWin32ExitCode = 0;
-    m_serviceStatus.dwServiceSpecificExitCode = 0;
-    m_serviceStatus.dwCheckPoint = 0;
-    m_serviceStatus.dwWaitHint = 0;
-
-    if (!Init()) {
-        m_serviceStatus.dwCurrentState = SERVICE_STOPPED;
-        m_serviceStatus.dwWin32ExitCode = GetLastError();
-        SetServiceStatus(m_serviceStatusHandle, &m_serviceStatus);
-        return;
-    }
-
-    m_serviceStatus.dwCurrentState = SERVICE_RUNNING;
-    SetServiceStatus(m_serviceStatusHandle, &m_serviceStatus);
-
-    m_workerThread = CreateThread(NULL, 0, WorkerThread, this, 0, NULL);
-    WaitForSingleObject(m_stopEvent, INFINITE);
-
-    m_serviceStatus.dwCurrentState = SERVICE_STOPPED;
-    SetServiceStatus(m_serviceStatusHandle, &m_serviceStatus);
 }
 
 void ChatService::WorkerThreadImpl()
@@ -134,7 +85,7 @@ void ChatService::WorkerThreadImpl()
         return;
     }
 
-    while (WaitForSingleObject(m_stopEvent, 0) != WAIT_OBJECT_0) {
+    while (WaitForSingleObject(m_workerThread, 0) != WAIT_OBJECT_0) {
         SOCKET clientSocket = accept(listenSocket, NULL, NULL);
         if (clientSocket == INVALID_SOCKET) {
             continue;
@@ -144,20 +95,6 @@ void ChatService::WorkerThreadImpl()
     }
 
     closesocket(listenSocket);
-}
-
-void WINAPI ChatService::ServiceCtrlHandler(DWORD dwCtrl)
-{
-    switch (dwCtrl)
-    {
-    case SERVICE_CONTROL_STOP:
-        if (s_service) {
-            s_service->Stop();
-        }
-        break;
-    default:
-            break;
-    }
 }
 
 DWORD WINAPI ChatService::WorkerThread(LPVOID lpParam)
