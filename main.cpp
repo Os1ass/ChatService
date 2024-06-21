@@ -5,6 +5,7 @@
 SERVICE_STATUS        g_serviceStatus = { 0 };
 SERVICE_STATUS_HANDLE g_serviceStatusHandle = NULL;
 HANDLE                g_serviceStopEvent = INVALID_HANDLE_VALUE;
+HANDLE                g_serverThread = INVALID_HANDLE_VALUE;
 
 VOID ServiceStop()
 {
@@ -83,8 +84,6 @@ BOOL ServiceInit()
         return FALSE;
     }
 
-    //init chat
-
     g_serviceStatus.dwCurrentState = SERVICE_RUNNING;
     g_serviceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
     if (SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus) == FALSE)
@@ -93,7 +92,6 @@ BOOL ServiceInit()
         return FALSE;
     }
 
-    //???????
     return TRUE;
 }
 
@@ -105,13 +103,9 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR* argv)
         return;
     }
     
-    if (!ChatService::GetInstance()->Init())
-    {
-        OutputDebugString(TEXT("Unable to init server"));
-        return;
-    }
-
+    g_serverThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)ChatService::StaticRun, ChatService::GetInstance(), 0, NULL);
     WaitForSingleObject(g_serviceStopEvent, INFINITE);
+    ChatService::GetInstance()->Stop();
 
     ServiceStop();
 }

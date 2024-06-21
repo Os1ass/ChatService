@@ -5,52 +5,22 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
-#define DEFAULT_PORT  "27015"
-#define BUFFER_SIZE   512
+const std::string nicknameToMessageSeparator = ": ";
 
 ChatService* ChatService::s_service = nullptr;
 
-ChatService* ChatService::GetInstance()
+DWORD WINAPI ChatService::StaticRun(LPVOID lpParam)
 {
-    if (s_service == nullptr)
-        s_service = new ChatService();
-    return s_service;
+    ChatService* service = (ChatService*)lpParam;
+    service->Run();
+    return 0;
 }
 
-ChatService::ChatService() : 
-    m_workerThread(nullptr)
+void ChatService::Run()
 {
-    s_service = this;
-}
+    if (!Init())
+        return;
 
-ChatService::~ChatService()
-{
-    CloseHandle(m_workerThread);
-    WSACleanup();
-}
-
-BOOL ChatService::Init()
-{
-    WSADATA wsaData;
-    int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (iResult != 0) 
-    {
-        OutputDebugString(TEXT("Unable to startup WSA"));
-        return FALSE;
-    }
-
-    m_workerThread = CreateThread(NULL, 0, WorkerThread, this, 0, NULL);
-    if (m_workerThread == NULL)
-    {
-        OutputDebugString(TEXT("Unable to create thread"));
-        return FALSE;
-    }
-
-    return TRUE;
-}
-
-void ChatService::WorkerThreadImpl()
-{
     struct addrinfo* result = NULL, hints;
 
     ZeroMemory(&hints, sizeof(hints));
@@ -85,39 +55,101 @@ void ChatService::WorkerThreadImpl()
         return;
     }
 
-    while (WaitForSingleObject(m_workerThread, 0) != WAIT_OBJECT_0) {
+    while (!m_cancellationToken)
+    {
         SOCKET clientSocket = accept(listenSocket, NULL, NULL);
         if (clientSocket == INVALID_SOCKET) {
             continue;
         }
 
-        std::thread(&ChatService::ProcessClient, this, clientSocket).detach();
+        char recvbuf[BUFFER_SIZE];
+        int iResult = recv(clientSocket, recvbuf, BUFFER_SIZE, 0);
+        if (iResult > 0) {
+            std::string clientNickname(recvbuf, iResult);
+            m_clientSocketsByNickname[clientNickname] = std::move(clientSocket);
+            m_clientThreads.push_back(std::thread([this, clientNickname] { this->ProcessClient(clientNickname); }));
+            std::string message = "Started thread for " + clientNickname;
+            OutputDebugStringA(message.c_str());
+        }
+        else {
+            closesocket(clientSocket);
+        }
     }
 
     closesocket(listenSocket);
 }
 
-DWORD WINAPI ChatService::WorkerThread(LPVOID lpParam)
+void ChatService::Stop()
 {
-    ChatService* pService = (ChatService*)lpParam;
-    pService->WorkerThreadImpl();
-    return 0;
+    m_cancellationToken = true;
+    for (auto& thread : m_clientThreads) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+    m_clientSocketsByNickname.clear();
+    m_clientThreads.clear();
 }
 
-void ChatService::ProcessClient(SOCKET clientSocket)
+ChatService* ChatService::GetInstance()
+{
+    if (s_service == nullptr)
+        s_service = new ChatService();
+    return s_service;
+}
+
+ChatService::ChatService() :
+    m_workerThread(nullptr)
+{
+    s_service = this;
+    m_cancellationToken = FALSE;
+}
+
+ChatService::~ChatService()
+{
+    Stop();
+    WSACleanup();
+}
+
+BOOL ChatService::Init()
+{
+    m_cancellationToken = FALSE;
+
+    WSADATA wsaData;
+    int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (iResult != 0)
+    {
+        OutputDebugString(TEXT("Unable to startup WSA"));
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+void ChatService::ProcessClient(std::string clientNickname)
 {
     char recvbuf[BUFFER_SIZE];
     int iResult;
-    do {
-        iResult = recv(clientSocket, recvbuf, BUFFER_SIZE, 0);
-        if (iResult > 0) {
-            std::string modifiedMessage = "[Server Received]: " + std::string(recvbuf, iResult);
-            send(clientSocket, modifiedMessage.c_str(), modifiedMessage.length(), 0);
+    while (!m_cancellationToken)
+    {
+        iResult = recv(m_clientSocketsByNickname[clientNickname], recvbuf, BUFFER_SIZE, 0);
+        if (iResult > 0)
+        {
+            std::string recvstr(recvbuf, iResult);
+            recvstr = clientNickname + nicknameToMessageSeparator + recvstr;
+            SendToClients(recvstr.c_str(), iResult + clientNickname.length() + nicknameToMessageSeparator.length());
         }
-        else if (iResult == 0) {
-            break;
-        }
-    } while (iResult > 0);
+    }
 
-    closesocket(clientSocket);
+    closesocket(m_clientSocketsByNickname[clientNickname]);
+    m_clientSocketsByNickname.erase(clientNickname);
+}
+
+void ChatService::SendToClients(const char* buf, int len)
+{
+    std::lock_guard<std::mutex> guard(m_clientSocketsMutex);
+    for (auto client : m_clientSocketsByNickname)
+    {
+        send(client.second, buf, len, 0);
+    }
 }
