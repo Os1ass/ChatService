@@ -140,7 +140,7 @@ void ChatService::ProcessClient(std::string clientNickname)
         if (iResult > 0)
         {
             recvStr = clientNickname + nicknameToMessageSeparator + recvStr;
-            SendToClients(recvStr, iResult + clientNickname.length() + nicknameToMessageSeparator.length());
+            SendToClients(recvStr);
         }
     }
 
@@ -148,26 +148,27 @@ void ChatService::ProcessClient(std::string clientNickname)
     m_clientSocketsByNickname.erase(clientNickname);
 }
 
-void ChatService::SendToClients(std::string message, int len)
+void ChatService::SendToClients(std::string message)
 {
     std::lock_guard<std::mutex> guard(m_clientSocketsMutex);
     for (auto client : m_clientSocketsByNickname)
     {
-        SendMessageToClient(client.second, message, len);
+        SendMessageToClient(client.second, message);
     }
 }
 
-void ChatService::SendMessageToClient(SOCKET clientSocket, std::string message, int len)
+void ChatService::SendMessageToClient(SOCKET clientSocket, std::string message)
 {
     std::string buffer = magicNumberString + message + magicNumberString;
-    send(clientSocket, message.c_str(), len + magicNumberString.size() * 2, 0);
+    send(clientSocket, buffer.c_str(), buffer.length(), 0);
 }
 
 int ChatService::RecieveMessageFromClient(SOCKET clientSocket, std::string& message)
 {
     char buffer[BUFFER_SIZE];
     int iResult = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-    if (iResult <= magicNumberString.length() * 2)
+    if (iResult <= magicNumberString.length() * 2 ||
+        iResult <= 0)
     {
         return 0;
     }
@@ -181,4 +182,8 @@ int ChatService::RecieveMessageFromClient(SOCKET clientSocket, std::string& mess
 
     message = bufferStr.substr(4, bufferStr.length() - 8);
     return iResult;
+    /*if (iResult == 0)
+        return iResult;
+    message = std::string(buffer, iResult);
+    return iResult;*/
 }
