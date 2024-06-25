@@ -6,6 +6,10 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 const std::string nicknameToMessageSeparator = ": ";
+const BYTE magicNumber[4] = { 0xAA, 0xBB, 0xCC, 0xDD };
+const std::string magicNumberString(reinterpret_cast<const char*>(magicNumber), sizeof(magicNumber));
+// magicNumber + message + magicNumber
+// identifiation for socket send/recv
 
 ChatService* ChatService::s_service = nullptr;
 
@@ -128,16 +132,15 @@ BOOL ChatService::Init()
 
 void ChatService::ProcessClient(std::string clientNickname)
 {
-    char recvbuf[BUFFER_SIZE];
+    std::string recvStr;
     int iResult;
     while (!m_cancellationToken)
     {
-        iResult = recv(m_clientSocketsByNickname[clientNickname], recvbuf, BUFFER_SIZE, 0);
+        iResult = RecieveMessageFromClient(m_clientSocketsByNickname[clientNickname], recvStr);
         if (iResult > 0)
         {
-            std::string recvstr(recvbuf, iResult);
-            recvstr = clientNickname + nicknameToMessageSeparator + recvstr;
-            SendToClients(recvstr.c_str(), iResult + clientNickname.length() + nicknameToMessageSeparator.length());
+            recvStr = clientNickname + nicknameToMessageSeparator + recvStr;
+            SendToClients(recvStr, iResult + clientNickname.length() + nicknameToMessageSeparator.length());
         }
     }
 
@@ -145,11 +148,28 @@ void ChatService::ProcessClient(std::string clientNickname)
     m_clientSocketsByNickname.erase(clientNickname);
 }
 
-void ChatService::SendToClients(const char* buf, int len)
+void ChatService::SendToClients(std::string message, int len)
 {
     std::lock_guard<std::mutex> guard(m_clientSocketsMutex);
     for (auto client : m_clientSocketsByNickname)
     {
-        send(client.second, buf, len, 0);
+        SendMessageToClient(client.second, message, len);
     }
+}
+
+void ChatService::SendMessageToClient(SOCKET clientSocket, std::string message, int len)
+{
+    std::string buffer = magicNumberString + message + magicNumberString;
+    send(clientSocket, message.c_str(), len + magicNumberString.size() * 2, 0);
+}
+
+int ChatService::RecieveMessageFromClient(SOCKET clientSocket, std::string& message)
+{
+    std::string bufferStr;
+    int iResult = RecieveMessageFromClient(clientSocket, bufferStr);
+    if (iResult <= magicNumberString.length() * 2)
+        return 0;
+
+    message = bufferStr.substr(4, bufferStr.length() - 8);
+    return iResult;
 }

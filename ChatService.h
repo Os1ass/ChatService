@@ -29,7 +29,9 @@ private:
     BOOL Init();
 
     void ProcessClient(std::string clientNickname);
-    void SendToClients(const char* buf, int len);
+    void SendToClients(std::string message, int len);
+    void SendMessageToClient(SOCKET clientSocket, std::string buffer, int len);
+    int RecieveMessageFromClient(SOCKET clientSocket, std::string& message);
 
     static ChatService* s_service;
     HANDLE m_workerThread;
