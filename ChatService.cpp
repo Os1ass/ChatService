@@ -168,7 +168,15 @@ int ChatService::RecieveMessageFromClient(SOCKET clientSocket, std::string& mess
     std::string bufferStr;
     int iResult = RecieveMessageFromClient(clientSocket, bufferStr);
     if (iResult <= magicNumberString.length() * 2)
+    {
         return 0;
+    }
+
+    if (bufferStr.substr(0, 4) != magicNumberString ||
+        bufferStr.substr(bufferStr.length() - 4, 4) != magicNumberString) 
+    {
+        return 0;
+    }
 
     message = bufferStr.substr(4, bufferStr.length() - 8);
     return iResult;
