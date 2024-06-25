@@ -66,10 +66,10 @@ void ChatService::Run()
             continue;
         }
 
-        char recvbuf[BUFFER_SIZE];
-        int iResult = recv(clientSocket, recvbuf, BUFFER_SIZE, 0);
+        
+        std::string clientNickname;
+        int iResult = RecieveMessageFromClient(clientSocket, clientNickname);
         if (iResult > 0) {
-            std::string clientNickname(recvbuf, iResult);
             m_clientSocketsByNickname[clientNickname] = std::move(clientSocket);
             m_clientThreads.push_back(std::thread([this, clientNickname] { this->ProcessClient(clientNickname); }));
             std::string message = "Started thread for " + clientNickname;
@@ -165,13 +165,14 @@ void ChatService::SendMessageToClient(SOCKET clientSocket, std::string message, 
 
 int ChatService::RecieveMessageFromClient(SOCKET clientSocket, std::string& message)
 {
-    std::string bufferStr;
-    int iResult = RecieveMessageFromClient(clientSocket, bufferStr);
+    char buffer[BUFFER_SIZE];
+    int iResult = recv(clientSocket, buffer, BUFFER_SIZE, 0);
     if (iResult <= magicNumberString.length() * 2)
     {
         return 0;
     }
 
+    std::string bufferStr(buffer, iResult);
     if (bufferStr.substr(0, 4) != magicNumberString ||
         bufferStr.substr(bufferStr.length() - 4, 4) != magicNumberString) 
     {
