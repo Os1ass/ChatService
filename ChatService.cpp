@@ -102,6 +102,21 @@ ChatService* ChatService::GetInstance()
     return s_service;
 }
 
+size_t ChatService::GetClients(std::string* clients)
+{
+    if (m_clientSocketsByNickname.size() == 0)
+    {
+        return 0;
+    }
+
+    clients = new std::string[m_clientSocketsByNickname.size()];
+    int clientsSize = m_clientSocketsByNickname.size();
+    auto client = m_clientSocketsByNickname.begin();
+    for (int i = 0; i < clientsSize; i++, client++)
+        clients[i] = client->first;
+    return clientsSize;
+}
+
 ChatService::ChatService() :
     m_workerThread(nullptr)
 {
@@ -182,8 +197,4 @@ int ChatService::RecieveMessageFromClient(SOCKET clientSocket, std::string& mess
 
     message = bufferStr.substr(4, bufferStr.length() - 8);
     return iResult;
-    /*if (iResult == 0)
-        return iResult;
-    message = std::string(buffer, iResult);
-    return iResult;*/
 }
