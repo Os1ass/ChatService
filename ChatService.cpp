@@ -102,7 +102,7 @@ ChatService* ChatService::GetInstance()
     return s_service;
 }
 
-size_t ChatService::GetClients(std::string* clients)
+size_t ChatService::GetClients(std::string*& clients)
 {
     if (m_clientSocketsByNickname.size() == 0)
     {

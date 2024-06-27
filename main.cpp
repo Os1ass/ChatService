@@ -7,60 +7,70 @@ SERVICE_STATUS_HANDLE g_serviceStatusHandle = NULL;
 HANDLE                g_serviceStopEvent = INVALID_HANDLE_VALUE;
 HANDLE                g_serverThread = INVALID_HANDLE_VALUE;
 HANDLE                g_pipeThread = INVALID_HANDLE_VALUE;
-const LPCWSTR         g_pipeName = L"\\.\pipe\ServerStatusPipe";
-const BYTE            g_pipeSeparator = 0xEE;
+const LPCWSTR         g_pipeName = L"\\\\.\\pipe\\ServerStatusPipe";
+const BYTE            g_pipeSeparator[1] = { 0xEE };
 const std::string     g_pipeSeparatorStr(reinterpret_cast<const char*>(g_pipeSeparator), sizeof(g_pipeSeparator));
 
-void ProcessPipeConnection(HANDLE hPipe, OVERLAPPED overlap)
+std::string GetClientsStr(std::string* clients, int clientsSize)
 {
-    std::string* clients;
+    if (clientsSize == 0)
+    {
+        return g_pipeSeparatorStr + g_pipeSeparatorStr + '\0';
+    }
+
+    std::string clientsStr;
+    clientsStr = g_pipeSeparatorStr;
+    for (int i = 0; i < clientsSize; i++)
+    {
+        clientsStr += clients[i] + g_pipeSeparatorStr;
+    }
+    delete[] clients;
+    return clientsStr + '\0';
+}
+
+void ProcessPipeConnection(HANDLE hPipe, LPOVERLAPPED overlap)
+{
+    std::string* clients = nullptr;
     size_t clientsSize;
     BOOL fSuccess;
-
+    
+    SetEvent(overlap->hEvent);
     while (WaitForSingleObject(g_serviceStopEvent, 0) != WAIT_OBJECT_0)
     {
-        if (WaitForSingleObject(overlap.hEvent, 0) != WAIT_OBJECT_0)
-        {
-            Sleep(1000);
-            continue;
-        }
-
         clientsSize = ChatService::GetInstance()->GetClients(clients);
-        if (clients == nullptr || clientsSize == 0)
-        {
-            Sleep(1000);
-            continue;
-        }
-
-        std::string clientListStr;
-        for (int i = 0; i < clientsSize - 1; i++)
-        {
-            clientListStr += clients[i] + g_pipeSeparatorStr;
-        }
-        clientListStr += clients[clientsSize - 1];
-        delete[] clients;
-
+        std::string clientListStr = GetClientsStr(clients, clientsSize);
+        
+        ResetEvent(overlap->hEvent);
         fSuccess = WriteFile(
             hPipe,
             clientListStr.c_str(),
             clientListStr.length(),
             NULL,
-            &overlap
+            overlap
         );
 
-        if (fSuccess && GetLastError() != ERROR_IO_PENDING)
+        if (!fSuccess && GetLastError() != ERROR_IO_PENDING)
         {
             OutputDebugString(L"WriteFile failed");
             break;
         }
 
+        while (WaitForSingleObject(g_serviceStopEvent, 0) != WAIT_OBJECT_0 &&
+            WaitForSingleObject(overlap->hEvent, 0) != WAIT_OBJECT_0)
+        {
+            Sleep(500);
+        }
+        if (WaitForSingleObject(g_serviceStopEvent, 0) == WAIT_OBJECT_0)
+        {
+            break;
+        }
         Sleep(1000);
     }
 
     DisconnectNamedPipe(hPipe);
 }
 
-static DWORD WINAPI PipeHandle(LPVOID lpParam)
+DWORD WINAPI PipeHandle(LPVOID lpParam)
 {
     HANDLE hPipe = CreateNamedPipe(
         g_pipeName,
@@ -94,27 +104,34 @@ static DWORD WINAPI PipeHandle(LPVOID lpParam)
         return GetLastError();
     }
 
-    bool fConnected = ConnectNamedPipe(hPipe, &overlap);
-    if (fConnected)
-    {
-        OutputDebugString(L"ConnectNamedPipe failed");
-        DisconnectNamedPipe(hPipe);
-        CloseHandle(hPipe);
-        return GetLastError();
-    }
-
+    bool fConnected;
     while (WaitForSingleObject(g_serviceStopEvent, 0) != WAIT_OBJECT_0)
     {
-        if (WaitForSingleObject(overlap.hEvent, 0) != WAIT_OBJECT_0)
+        ResetEvent(overlap.hEvent);
+        fConnected = ConnectNamedPipe(hPipe, &overlap);
+        if (!fConnected && GetLastError() != ERROR_IO_PENDING)
         {
-            Sleep(500);
-            continue;
+            OutputDebugString(L"ConnectNamedPipe failed");
+            DisconnectNamedPipe(hPipe);
+            CloseHandle(hPipe);
+            return GetLastError();
         }
 
-        ProcessPipeConnection(hPipe, overlap);
-    }
+        while (WaitForSingleObject(g_serviceStopEvent, 0) != WAIT_OBJECT_0 &&
+            WaitForSingleObject(overlap.hEvent, 0) != WAIT_OBJECT_0)
+        {
+            Sleep(500);
+        }
+        if (WaitForSingleObject(g_serviceStopEvent, 0) == WAIT_OBJECT_0)
+        {
+            break;
+        }
 
+        ProcessPipeConnection(hPipe, &overlap);
+    }
+    CloseHandle(overlap.hEvent);
     CloseHandle(hPipe);
+    return 0;
 }
 
 VOID ServiceStop()

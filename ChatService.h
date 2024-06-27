@@ -21,7 +21,7 @@ public:
     void operator=(const ChatService &) = delete;
 
     static ChatService* GetInstance();
-    size_t GetClients(std::string* clients);
+    size_t GetClients(std::string*& clients);
 
     ~ChatService();
 
