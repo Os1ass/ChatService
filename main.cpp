@@ -1,4 +1,5 @@
 #include "ChatService.h"
+#include <iostream>
 
 #define SERVICE_NAME TEXT("ChatService")
 
@@ -8,21 +9,19 @@ HANDLE                g_serviceStopEvent = INVALID_HANDLE_VALUE;
 HANDLE                g_serverThread = INVALID_HANDLE_VALUE;
 HANDLE                g_pipeThread = INVALID_HANDLE_VALUE;
 const LPCWSTR         g_pipeName = L"\\\\.\\pipe\\ServerStatusPipe";
-const BYTE            g_pipeSeparator[1] = { 0xEE };
-const std::string     g_pipeSeparatorStr(reinterpret_cast<const char*>(g_pipeSeparator), sizeof(g_pipeSeparator));
 
 std::string GetClientsStr(std::string* clients, int clientsSize)
 {
     if (clientsSize == 0)
     {
-        return g_pipeSeparatorStr + g_pipeSeparatorStr + '\0';
+        return g_magicNumberString + g_magicNumberString + '\0';
     }
 
     std::string clientsStr;
-    clientsStr = g_pipeSeparatorStr;
+    clientsStr = g_magicNumberString;
     for (int i = 0; i < clientsSize; i++)
     {
-        clientsStr += clients[i] + g_pipeSeparatorStr;
+        clientsStr += clients[i] + g_magicNumberString;
     }
     delete[] clients;
     return clientsStr + '\0';
@@ -260,6 +259,7 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR* argv)
 
 int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
+    setlocale(LC_ALL, "RUSSIAN");
     SERVICE_TABLE_ENTRY serviceTable[] = {
         { const_cast<LPWSTR>(SERVICE_NAME), ServiceMain},
         { NULL, NULL }

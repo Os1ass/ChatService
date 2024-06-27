@@ -10,6 +10,9 @@
 #define DEFAULT_PORT  "26999"
 #define BUFFER_SIZE   4096
 
+extern const std::string g_magicNumberString;
+extern const BYTE g_magicNumber[4];
+
 class ChatService
 {
 public:

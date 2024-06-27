@@ -5,11 +5,11 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
-const std::string nicknameToMessageSeparator = ": ";
-const BYTE magicNumber[4] = { 0xAA, 0xBB, 0xCC, 0xDD };
-const std::string magicNumberString(reinterpret_cast<const char*>(magicNumber), sizeof(magicNumber));
+const std::string g_nicknameToMessageSeparator = ": ";
+extern const BYTE g_magicNumber[4] = { 0xAA, 0xBB, 0xCC, 0xDD };
+extern const std::string g_magicNumberString(reinterpret_cast<const char*>(g_magicNumber), sizeof(g_magicNumber));
 // magicNumber + message + magicNumber
-// identifiation for socket send/recv
+// identifiation for socket send/recv and pipe
 
 ChatService* ChatService::s_service = nullptr;
 
@@ -154,7 +154,7 @@ void ChatService::ProcessClient(std::string clientNickname)
         iResult = RecieveMessageFromClient(m_clientSocketsByNickname[clientNickname], recvStr);
         if (iResult > 0)
         {
-            recvStr = clientNickname + nicknameToMessageSeparator + recvStr;
+            recvStr = clientNickname + g_nicknameToMessageSeparator + recvStr;
             SendToClients(recvStr);
         }
     }
@@ -174,7 +174,7 @@ void ChatService::SendToClients(std::string message)
 
 void ChatService::SendMessageToClient(SOCKET clientSocket, std::string message)
 {
-    std::string buffer = magicNumberString + message + magicNumberString;
+    std::string buffer = g_magicNumberString + message + g_magicNumberString;
     send(clientSocket, buffer.c_str(), buffer.length(), 0);
 }
 
@@ -182,15 +182,15 @@ int ChatService::RecieveMessageFromClient(SOCKET clientSocket, std::string& mess
 {
     char buffer[BUFFER_SIZE];
     int iResult = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-    if (iResult <= magicNumberString.length() * 2 ||
+    if (iResult <= g_magicNumberString.length() * 2 ||
         iResult <= 0)
     {
         return 0;
     }
 
     std::string bufferStr(buffer, iResult);
-    if (bufferStr.substr(0, 4) != magicNumberString ||
-        bufferStr.substr(bufferStr.length() - 4, 4) != magicNumberString) 
+    if (bufferStr.substr(0, 4) != g_magicNumberString ||
+        bufferStr.substr(bufferStr.length() - 4, 4) != g_magicNumberString) 
     {
         return 0;
     }
