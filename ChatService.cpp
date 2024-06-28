@@ -66,14 +66,21 @@ void ChatService::Run()
             continue;
         }
 
-        
         std::string clientNickname;
         int iResult = RecieveMessageFromClient(clientSocket, clientNickname);
+        if (m_clientsByNickname.find(clientNickname) != m_clientsByNickname.end())
+        {
+            SendToClient(clientSocket, "Can't connect to the server, name " + clientNickname + " already in use");
+            closesocket(clientSocket);
+            continue;
+        }
+
         if (iResult > 0) {
-            m_clientSocketsByNickname[clientNickname] = std::move(clientSocket);
-            m_clientThreads.push_back(std::thread([this, clientNickname] { this->ProcessClient(clientNickname); }));
-            std::string message = "Started thread for " + clientNickname;
+            SendToClients(clientNickname + " connected, say hello!");
+            std::string message = "Starting thread for " + clientNickname;
             OutputDebugStringA(message.c_str());
+            std::lock_guard<std::mutex> guard(m_clientSocketsMutex);
+            m_clientsByNickname[clientNickname] = std::move(client(clientSocket, std::thread([this, clientNickname] { this->ProcessClient(clientNickname); })));
         }
         else {
             closesocket(clientSocket);
@@ -86,13 +93,12 @@ void ChatService::Run()
 void ChatService::Stop()
 {
     m_cancellationToken = true;
-    for (auto& thread : m_clientThreads) {
-        if (thread.joinable()) {
-            thread.join();
+    for (auto& client : m_clientsByNickname) {
+        if (client.second.thread.joinable()) {
+            client.second.thread.join();
         }
     }
-    m_clientSocketsByNickname.clear();
-    m_clientThreads.clear();
+    m_clientsByNickname.clear();
 }
 
 ChatService* ChatService::GetInstance()
@@ -104,14 +110,28 @@ ChatService* ChatService::GetInstance()
 
 size_t ChatService::GetClients(std::string*& clients)
 {
-    if (m_clientSocketsByNickname.size() == 0)
+    std::lock_guard<std::mutex> guard(m_clientSocketsMutex);
+    auto client = m_clientsByNickname.begin();
+    while (client != m_clientsByNickname.end())
+    {
+        if (client->second.socket == INVALID_SOCKET)
+        {
+            client->second.thread.join();
+            client = m_clientsByNickname.erase(client);
+        }
+        else
+        {
+            client++;
+        }
+    }
+    if (m_clientsByNickname.size() == 0)
     {
         return 0;
     }
 
-    clients = new std::string[m_clientSocketsByNickname.size()];
-    int clientsSize = m_clientSocketsByNickname.size();
-    auto client = m_clientSocketsByNickname.begin();
+    int clientsSize = m_clientsByNickname.size();
+    clients = new std::string[clientsSize];
+    client = m_clientsByNickname.begin();
     for (int i = 0; i < clientsSize; i++, client++)
         clients[i] = client->first;
     return clientsSize;
@@ -151,28 +171,44 @@ void ChatService::ProcessClient(std::string clientNickname)
     int iResult;
     while (!m_cancellationToken)
     {
-        iResult = RecieveMessageFromClient(m_clientSocketsByNickname[clientNickname], recvStr);
+        iResult = RecieveMessageFromClient(m_clientsByNickname[clientNickname].socket, recvStr);
         if (iResult > 0)
         {
             recvStr = clientNickname + g_nicknameToMessageSeparator + recvStr;
             SendToClients(recvStr);
+        } 
+        else
+        if (iResult == -1)
+        {
+            break;
         }
     }
-
-    closesocket(m_clientSocketsByNickname[clientNickname]);
-    m_clientSocketsByNickname.erase(clientNickname);
+    
+    std::lock_guard<std::mutex> guard(m_clientSocketsMutex);
+    closesocket(m_clientsByNickname[clientNickname].socket);
+    m_clientsByNickname[clientNickname].socket = INVALID_SOCKET;
 }
 
 void ChatService::SendToClients(std::string message)
 {
     std::lock_guard<std::mutex> guard(m_clientSocketsMutex);
-    for (auto client : m_clientSocketsByNickname)
+    auto client = m_clientsByNickname.begin();
+    while (client != m_clientsByNickname.end())
     {
-        SendMessageToClient(client.second, message);
+        if (client->second.socket == INVALID_SOCKET)
+        {
+            client->second.thread.join();
+            client = m_clientsByNickname.erase(client);
+        } 
+        else
+        {
+            SendToClient(client->second.socket, message);
+            client++;
+        }
     }
 }
 
-void ChatService::SendMessageToClient(SOCKET clientSocket, std::string message)
+void ChatService::SendToClient(SOCKET clientSocket, std::string message)
 {
     std::string buffer = g_magicNumberString + message + g_magicNumberString;
     send(clientSocket, buffer.c_str(), buffer.length(), 0);
@@ -182,8 +218,11 @@ int ChatService::RecieveMessageFromClient(SOCKET clientSocket, std::string& mess
 {
     char buffer[BUFFER_SIZE];
     int iResult = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-    if (iResult <= g_magicNumberString.length() * 2 ||
-        iResult <= 0)
+    if (iResult <= 0)
+    {
+        return -1;
+    }
+    if (iResult <= g_magicNumberString.length() * 2)
     {
         return 0;
     }

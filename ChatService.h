@@ -29,18 +29,33 @@ public:
     ~ChatService();
 
 private:
+    struct client
+    {
+        SOCKET socket;
+        std::thread thread;
+
+        client(SOCKET clientSocket, std::thread clientThread)
+        {
+            socket = std::move(clientSocket);
+            thread = std::move(clientThread);
+        }
+        client()
+        {
+            socket = INVALID_SOCKET;
+        }
+    };
+
     ChatService();
     BOOL Init();
 
     void ProcessClient(std::string clientNickname);
     void SendToClients(std::string message);
-    void SendMessageToClient(SOCKET clientSocket, std::string message);
+    void SendToClient(SOCKET clientSocket, std::string message);
     int RecieveMessageFromClient(SOCKET clientSocket, std::string& message);
 
     static ChatService* s_service;
     HANDLE m_workerThread;
-    std::map<std::string, SOCKET> m_clientSocketsByNickname;
+    std::map<std::string, client> m_clientsByNickname;
     std::atomic<BOOL> m_cancellationToken;
     std::mutex m_clientSocketsMutex;
-    std::vector<std::thread> m_clientThreads;
 };

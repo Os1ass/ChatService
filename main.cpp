@@ -71,6 +71,17 @@ void ProcessPipeConnection(HANDLE hPipe, LPOVERLAPPED overlap)
 
 DWORD WINAPI PipeHandle(LPVOID lpParam)
 {
+    OVERLAPPED overlap;
+    overlap.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    overlap.Offset = 0;
+    overlap.OffsetHigh = 0;
+
+    if (overlap.hEvent == INVALID_HANDLE_VALUE)
+    {
+        OutputDebugString(L"Unable to create event");
+        return GetLastError();
+    }
+
     HANDLE hPipe = CreateNamedPipe(
         g_pipeName,
         PIPE_ACCESS_OUTBOUND |
@@ -88,18 +99,7 @@ DWORD WINAPI PipeHandle(LPVOID lpParam)
     if (hPipe == INVALID_HANDLE_VALUE)
     {
         OutputDebugString(L"Unable to created named pipe");
-        return GetLastError();
-    }
-
-    OVERLAPPED overlap;
-    overlap.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    overlap.Offset = 0;
-    overlap.OffsetHigh = 0;
-
-    if (overlap.hEvent == INVALID_HANDLE_VALUE)
-    {
-        OutputDebugString(L"Unable to create event");
-        CloseHandle(hPipe);
+        CloseHandle(overlap.hEvent);
         return GetLastError();
     }
 
@@ -108,7 +108,9 @@ DWORD WINAPI PipeHandle(LPVOID lpParam)
     {
         ResetEvent(overlap.hEvent);
         fConnected = ConnectNamedPipe(hPipe, &overlap);
-        if (!fConnected && GetLastError() != ERROR_IO_PENDING)
+        if (!fConnected && 
+            GetLastError() != ERROR_IO_PENDING &&
+            GetLastError() != ERROR_PIPE_CONNECTED)
         {
             OutputDebugString(L"ConnectNamedPipe failed");
             DisconnectNamedPipe(hPipe);
@@ -116,10 +118,13 @@ DWORD WINAPI PipeHandle(LPVOID lpParam)
             return GetLastError();
         }
 
-        while (WaitForSingleObject(g_serviceStopEvent, 0) != WAIT_OBJECT_0 &&
-            WaitForSingleObject(overlap.hEvent, 0) != WAIT_OBJECT_0)
+        if (GetLastError() != ERROR_PIPE_CONNECTED)
         {
-            Sleep(500);
+            while (WaitForSingleObject(g_serviceStopEvent, 0) != WAIT_OBJECT_0 &&
+                WaitForSingleObject(overlap.hEvent, 0) != WAIT_OBJECT_0)
+            {
+                Sleep(500);
+            }
         }
         if (WaitForSingleObject(g_serviceStopEvent, 0) == WAIT_OBJECT_0)
         {
@@ -248,7 +253,7 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR* argv)
     WaitForSingleObject(g_serviceStopEvent, INFINITE);
     if (WaitForSingleObject(g_pipeThread, 5000) != WAIT_OBJECT_0)
     {
-        TerminateThread(g_pipeThread, 0);
+        TerminateThread(g_pipeThread, 1);
     }
 
     CloseHandle(g_pipeThread);
