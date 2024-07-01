@@ -11,4 +11,5 @@ sc start ChatService
 - Чтобы проверить статус сервиса нужно ввести `sc qc ChatService`
 - Чтобы остановить сервис нужно ввести `sc stop ChatService`
 - Чтобы удалить сервис нужно ввести `sc delete ChatService`
-Конфиргурация сервера происходит с помощью файла config.xml в корневой папке.
+
+Конфиргурация сервера происходит с помощью файла config.xml в корневой папке. Для парсинга xml файла используется [tinyxml2](https://github.com/leethomason/tinyxml2).
