@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<chat_server>
+	<port>26998</port>
+	<greeting_string>"Hello"</greeting_string>
+</chat_server>

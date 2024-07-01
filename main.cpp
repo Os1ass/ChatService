@@ -1,4 +1,5 @@
 #include "ChatService.h"
+#include "tinyxml2.h"
 #include <iostream>
 
 #define SERVICE_NAME TEXT("ChatService")
@@ -9,6 +10,7 @@ HANDLE                g_serviceStopEvent = INVALID_HANDLE_VALUE;
 HANDLE                g_serverThread = INVALID_HANDLE_VALUE;
 HANDLE                g_pipeThread = INVALID_HANDLE_VALUE;
 const LPCWSTR         g_pipeName = L"\\\\.\\pipe\\ServerStatusPipe";
+std::string           g_configFileName = "Config.xml";
 
 std::string GetClientsStr(std::string* clients, int clientsSize)
 {
@@ -262,9 +264,66 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR* argv)
     ServiceStop();
 }
 
+void ParseXmlElement(tinyxml2::XMLElement* chat_server, const char* elementName, std::string& value)
+{
+    tinyxml2::XMLElement* element = chat_server->FirstChildElement(elementName);
+    if (element == 0)
+    {
+        std::string debugString(elementName);
+        debugString = "Not found element with name " + debugString;
+        OutputDebugStringA(debugString.c_str());
+        return;
+    }
+
+    tinyxml2::XMLText* textNode = element->FirstChild()->ToText();
+    if (textNode == 0)
+    {
+        std::string debugString(elementName);
+        debugString = "Failed to parse " + debugString;
+        OutputDebugStringA(debugString.c_str());
+        return;
+    }
+    value = textNode->Value();
+}
+
+void ParseXmlFile()
+{
+    wchar_t wexecutableFileName[BUFFER_SIZE];
+    char executableFileName[BUFFER_SIZE];
+    GetModuleFileName(NULL, wexecutableFileName, BUFFER_SIZE);
+
+    size_t fileNameSize;
+    wcstombs_s(&fileNameSize, executableFileName, BUFFER_SIZE, wexecutableFileName, _TRUNCATE);
+    std::string executableFileNameStr(executableFileName, fileNameSize - strlen("x64/Debug/ChatService.exe") - 1);
+
+    executableFileNameStr = executableFileNameStr + "Config.xml";
+    g_configFileName = executableFileNameStr.c_str();
+
+    tinyxml2::XMLDocument config;
+    if (config.LoadFile(g_configFileName.c_str()) != tinyxml2::XML_SUCCESS)
+    {
+        const char* error = tinyxml2::XMLDocument::ErrorIDToName(config.ErrorID());
+        OutputDebugStringA(error);
+        return;
+    }
+    
+    tinyxml2::XMLElement* chat_server = config.FirstChildElement("chat_server");
+    if (chat_server == 0)
+    {
+        OutputDebugString(L"Element chat_server not found");
+        return;
+    }
+
+    ParseXmlElement(chat_server, "port", g_serverPort);
+    //ParseXmlElement(chat_server, "greeting_string");
+}
+
 int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
     setlocale(LC_ALL, "RUSSIAN");
+
+    ParseXmlFile();
+
     SERVICE_TABLE_ENTRY serviceTable[] = {
         { const_cast<LPWSTR>(SERVICE_NAME), ServiceMain},
         { NULL, NULL }

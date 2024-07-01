@@ -6,6 +6,7 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 const std::string g_nicknameToMessageSeparator = ": ";
+extern std::string g_serverPort = DEFAULT_PORT;
 extern const BYTE g_magicNumber[4] = { 0xAA, 0xBB, 0xCC, 0xDD };
 extern const std::string g_magicNumberString(reinterpret_cast<const char*>(g_magicNumber), sizeof(g_magicNumber));
 // magicNumber + message + magicNumber
@@ -33,7 +34,7 @@ void ChatService::Run()
     hints.ai_protocol = IPPROTO_TCP;
     hints.ai_flags = AI_PASSIVE;
 
-    int iResult = getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+    int iResult = getaddrinfo(NULL, g_serverPort.c_str(), &hints, &result);
     if (iResult != 0) {
         return;
     }
