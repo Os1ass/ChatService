@@ -307,15 +307,15 @@ void ParseXmlFile()
         return;
     }
     
-    tinyxml2::XMLElement* chat_server = config.FirstChildElement("chat_server");
-    if (chat_server == 0)
+    tinyxml2::XMLElement* chatServer = config.FirstChildElement("chat_server");
+    if (chatServer == 0)
     {
         OutputDebugString(L"Element chat_server not found");
         return;
     }
 
-    ParseXmlElement(chat_server, "port", g_serverPort);
-    //ParseXmlElement(chat_server, "greeting_string");
+    ParseXmlElement(chatServer, "port", g_serverPort);
+    ParseXmlElement(chatServer, "greeting_string", g_greetingString);
 }
 
 int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)

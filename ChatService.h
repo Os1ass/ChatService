@@ -13,6 +13,7 @@
 extern const std::string g_magicNumberString;
 extern const BYTE g_magicNumber[4];
 extern std::string g_serverPort;
+extern std::string g_greetingString;
 
 class ChatService
 {
